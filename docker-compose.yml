@@ -1,0 +1,60 @@
+version: '3.7'
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n_ia_router
+    restart: always
+    ports:
+      - "5678:5678"
+    env_file:
+      - .env
+    environment:
+      # As URLs apontam para os serviços Docker (kokoro, whisper) ou para o HOST (ollama)
+      - N8N_HOST=${N8N_HOST}
+      - N8N_PORT=${N8N_PORT}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - OLLAMA_API_URL=${OLLAMA_API_URL} # Aponta para host.docker.internal (o seu PC)
+      - TTS_API_URL=${TTS_API_URL}
+      - WHISPER_API_URL=${WHISPER_API_URL}
+      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME}
+      - GOOGLE_SHEETS_LOG_ID=${GOOGLE_SHEETS_LOG_ID}
+      - GOOGLE_SHEETS_API_URL=${GOOGLE_SHEETS_API_URL}
+      - GOOGLE_SHEETS_SHEET_NAME=${GOOGLE_SHEETS_SHEET_NAME}
+      - EMAIL_ADMIN_ALERTA=${EMAIL_ADMIN_ALERTA}
+      - WHATSAPP_DEST_NUMBER=${WHATSAPP_DEST_NUMBER}
+
+    volumes:
+      - ./data:/home/node/.n8n 
+      
+  # O SERVIÇO OLLAMA FOI REMOVIDO PARA RODAR NO HOST (PC)
+
+  # -------------------------------------------------------------
+  # SERVIÇO 2: KOKORO (TTS) - CONSTRUÍDO COM SEUS ARQUIVOS
+  # -------------------------------------------------------------
+  kokoro:
+    container_name: kokoro_tts_api
+    # Instrução para construir a imagem usando o Dockerfile_kokoro na pasta atual
+    build:
+      context: .
+      dockerfile: Dockerfile_kokoro
+    restart: always
+    ports:
+      - "8000:8000"
+      
+  # -------------------------------------------------------------
+  # SERVIÇO 3: WHISPER STT - CONSTRUÍDO COM SEUS ARQUIVOS
+  # -------------------------------------------------------------
+  whisper-stt:
+    container_name: whisper_stt_api
+    build:
+      context: .
+      dockerfile: Dockerfile_whisper
+    ports:
+      - "9000:9000"
+    restart: always
+    # NOVO COMANDO: Agora o CMD não precisa de 1 hora de timeout, mas vamos mantê-lo alto
+    # por segurança:
+    command: ["gunicorn", "--bind", "0.0.0.0:9000", "--timeout", "3600", "whisper_api:app"]
+    
+   
