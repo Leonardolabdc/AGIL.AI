@@ -1,0 +1,1263 @@
+{
+  "name": "Etapa2",
+  "nodes": [
+    {
+      "parameters": {
+        "resource": "object",
+        "operation": "create",
+        "bucketName": "={{ $env[\"GCS_BUCKET_NAME\"] }}",
+        "objectName": "={{ $json.filename }}",
+        "createData": {},
+        "createQuery": {},
+        "encryptionHeaders": {},
+        "requestOptions": {}
+      },
+      "type": "n8n-nodes-base.googleCloudStorage",
+      "typeVersion": 1,
+      "position": [
+        432,
+        176
+      ],
+      "id": "cace27ed-d0e7-4f0c-8e32-015e080ff5a6",
+      "name": "Upload Google Storage",
+      "credentials": {
+        "googleCloudStorageOAuth2Api": {
+          "id": "mgZObZzFppbepgva",
+          "name": "Google Cloud Storage account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// NÓ CODE: PREPARAÇÃO DO PROMPT E CONTEXTO (Versão Final e Estável com Proteção)\n\n// Usamos $json para acessar o item de entrada do Webhook.\nconst item = {}; // Objeto de saída\nitem.json = {}; // Inicializa a saída\n\n// 1. EXTRAÇÃO E LIMPEZA DOS DADOS BRUTOS DO TWILIO\nconst body = $json.body;\nconst userMessage = body.Body; // Mensagem bruta do usuário\n\n// Limpa o número de telefone (remove o prefixo 'whatsapp:')\nlet phoneNumber = body.From;\nif (phoneNumber && phoneNumber.startsWith('whatsapp:')) {\n    phoneNumber = phoneNumber.replace('whatsapp:', '');\n}\n\n// Variável de Proteção: Definida, mas a lógica 'if' é feita pelo nó IF posterior.\nconst MAX_LENGTH = 500; \n\n// 2. ESCAPE E PREPARAÇÃO DO PROMPT\nconst escapedUserMessage = userMessage.replace(/\"/g, '\\\\\\\\\"');\n\n// ----------------------------------------------------\n// *** BLOCO DE PROTEÇÃO DE TAMANHO (NÃO CONTÉM 'return', DEIXA O IF DECIDIR) ***\n// ----------------------------------------------------\n\n// 3. DEFINIÇÃO E MONTAGEM DO GUARDRAIL \nconst systemInstruction = `\nVocê é um roteador de fluxo de trabalho (Flow Router) com a ÚNICA função de analisar a intenção da mensagem do usuário e retornar o CANAL de roteamento apropriado.\n\n# REGRAS CRÍTICAS DE SAÍDA:\n1. Sua resposta DEVE ser estritamente um objeto JSON em UMA ÚNICA LINHA.\n2. Chave de saída DEVE ser: \"caminho\".\n3. Valores Permitidos: \"email\", \"whats\", \"trello\" ou \"ALERTA_FALHA\".\n4. NÃO inclua nenhum texto adicional.\n\n# CRITÉRIOS DE ROTEAMENTO (Siga estritamente a prioridade):\n1. - Rota para \"whats\" se a intenção for: **PRIORIDADE MÁXIMA:** Urgência (usando termos como 'agora', 'imediatamente', 'urgentemente') ou solicitação de contato direto ('me liga', 'retorna'). **A urgência deve sempre anular a ambiguidade, perguntas pessoais ou contexto irrelevante.\n2. Rota para \"trello\": Se a intenção for organizar tarefas, criar um card, agendar um acompanhamento, criar um checklist, ou mover uma tarefa de projeto.\n3. Rota para \"email\": Se for formalização, arquivamento ou comunicação oficial. Este é o FALLBACK PADRÃO para qualquer mensagem que não se encaixe nos critérios acima.\n4. Rota para \"ALERTA_FALHA\": APENAS se a mensagem for lixo, completamente incompreensível ou desconexa.\n\n# EXEMPLOS DE TREINAMENTO:\n- Usuário: \"Me retorna imediatamente. É um assunto fora do comum.\" -> {\"caminho\": \"whats\"}\n- Usuário: \"documento em anexo. formalizar para a coordenação.\" -> {\"caminho\": \"email\"}\n- Usuário: \"banana azul\" -> {\"caminho\": \"ALERTA_FALHA\"}\n- Usuário: \"Organizar a lista de pendências da próxima semana.\" -> {\"caminho\": \"trello\"}\n\nAnalise a seguinte Pergunta do Usuário: ${escapedUserMessage}\n`;\n\n// 4. COMBINAÇÃO E LIMPEZA DO PROMPT\nconst cleanPrompt = systemInstruction\n    .replace(/[\\r\\n]+/g, ' ')\n    .replace(/\\s{2,}/g, ' ')\n    .trim();\n\n// 5. CRIA O OBJETO DE PAYLOAD DO OLLAMA\nconst ollamaObject = {\n    \"model\": \"gemma3:1b\",\n    \"prompt\": cleanPrompt,\n    \"stream\": false\n};\n\nconst ollamaJsonString = JSON.stringify(ollamaObject);\n\n// 6. RETORNA O PAYLOAD FINAL\nitem.json.ollamaJsonString = ollamaJsonString;\nitem.json.original_message = userMessage;\nitem.json.phone_number = phoneNumber;\n\nreturn item;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1600,
+        208
+      ],
+      "id": "39478284-f451-4b79-84b3-eabaffee495d",
+      "name": "Contexto Ollama"
+    },
+    {
+      "parameters": {
+        "jsCode": "// NÓ CODE: FORMATA ÁUDIO\n// Este nó prepara o nome do arquivo para o Google Storage (Upload)\n// e puxa as variáveis de contexto que são necessárias depois.\n\nfor (const item of items) {\n  // 1. GERAÇÃO DO NOME DO ARQUIVO\n  // Cria um nome de arquivo único usando o timestamp para evitar colisões\n  const timestamp = new Date().getTime();\n  const filename = `${timestamp}.mp3`;\n\n  // Adiciona a variável 'filename' ao objeto JSON do item.\n  // O nó 'Upload Google Storage' usará essa variável.\n  item.json.filename = filename;\n\n  // 2. EXTRAÇÃO DE VARIÁVEIS DE CONTEXTO\n  // Puxa o telefone e a mensagem do nó 'Contexto Ollama' (o nó Code no início do fluxo)\n  // Nota: Isso é necessário porque o nó 'Filtro Ollama' pode não ter sido executado ainda\n  // ou pode estar em uma branch separada.\n  \n  // Puxa o telefone limpo (Ex: +55419...)\n  item.json.Telefone_Usuario = $('Contexto Ollama').item.json.phone_number;\n\n  // Puxa a mensagem original\n  item.json['Whatsapp-Message'] = $('Contexto Ollama').item.json.original_message;\n  \n  // (Nenhuma modificação é feita nos dados binários do áudio, eles são passados adiante.)\n}\n\n// Retorna todos os itens modificados.\nreturn items;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        176,
+        176
+      ],
+      "id": "84f9e7e3-c78d-45e1-91ed-cee07371006b",
+      "name": "Formata Áudio"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "SUBSTITUA_WEBHOOK_TWILIO_APOS_IMPORTAR",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -2096,
+        224
+      ],
+      "id": "99490db9-665a-46cf-a744-f79cb6833247",
+      "name": "Webhook Recebe Mensagem Usuário",
+      "webhookId": "SUBSTITUA_WEBHOOK_TWILIO_APOS_IMPORTAR"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "leftValue": "ALERTA_FALHA",
+                    "rightValue": "={{ $json.caminho_ollama }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "d75b83ec-ef47-4cdc-b0f0-dc1b46cf2c7c"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "324b6db7-f592-4c77-b6f9-ee146802c8e8",
+                    "leftValue": "whats",
+                    "rightValue": "={{ $json.caminho_ollama }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "6d3e3b64-5d56-4339-8133-91c57caeb574",
+                    "leftValue": "trello",
+                    "rightValue": "={{ $json.caminho_ollama }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "7ec6c529-2656-4ba8-ad4b-e4b644c4780a",
+                    "leftValue": "email",
+                    "rightValue": "={{ $json.caminho_ollama }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -672,
+        176
+      ],
+      "id": "6ced6734-c1a3-41e4-ad46-24d5565adf2d",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "jsCode": "// NÓ CODE: FORMATA TEXTO PARA ÁUDIO\n// Objetivo: Limpar a mensagem, **ESCAPAR ASPAS** e propagar contexto.\n\nfor (const item of items) {\n  \n  // 1. EXTRAÇÃO DE VARIÁVEIS DE CONTEXTO ESTÁVEIS\n  let responseText = $('Contexto Ollama').item.json.original_message;\n  let phoneNumber = $('Contexto Ollama').item.json.phone_number;\n  let caminhoOllama = $('Limpeza Ollama').item.json.caminho_ollama;\n\n  // 2. LIMPEZA DA MENSAGEM\n  \n  // Remove emojis\n  const emojiRegex = /(\\u00a9|\\u00ae|[\\u2000-\\u3300]|\\ud83c[\\ud000-\\udfff]|\\ud83d[\\ud000-\\udfff]|\\ud83e[\\ud000-\\udfff])/g;\n  responseText = responseText.replace(emojiRegex, '');\n\n  // Remove quebras de linha e múltiplos espaços\n  responseText = responseText.replace(/\\n/g, ' ').replace(/\\s{2,}/g, ' ').trim();\n  \n  // *** CORREÇÃO CRÍTICA: ESCAPE DE ASPAS DUPLAS ***\n  // Escapa todas as aspas duplas internas (\") para que o JSON do TTS não quebre.\n  responseText = responseText.replace(/\"/g, '\\\\\"');\n  \n  // 3. PROPAGAÇÃO DAS VARIÁVEIS\n  \n  // CRÍTICO: 'Whatsapp-Message' agora contém o texto limpo E escapado\n  item.json['Whatsapp-Message'] = responseText; \n  \n  item.json.Telefone_Usuario = phoneNumber;\n  item.json.caminho_ollama = caminhoOllama;\n}\n\n// Retorna todos os itens modificados.\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        192
+      ],
+      "id": "15a3c530-d812-4c2f-b165-415d3921580e",
+      "name": "Formata Texto para Áudio"
+    },
+    {
+      "parameters": {
+        "jsCode": "// NÓ CODE: LIMPEZA OLLAMA (Com Prioridade Máxima para WHATSAPP)\n\nfor (const item of items) {\n    // 1. EXTRAÇÃO DAS VARIÁVEIS DE CONTEXTO\n    const originalMessage = $('Contexto Ollama').item.json.original_message;\n    const phoneNumber = $('Contexto Ollama').item.json.phone_number;\n    \n    const ollamaResponseBruta = item.json.response;\n\n    let caminho = 'erro'; // Valor padrão inicial\n    \n    // 2. EXTRAÇÃO E LIMPEZA DA RESPOSTA BRUTA (Parsing da IA)\n    const regex = /```json\\s*(\\{[\\s\\S]*?\\})\\s*```/;\n    const match = ollamaResponseBruta.match(regex);\n    \n    if (match && match[1]) {\n        const jsonStringLimpa = match[1].trim();\n        try {\n            const parsedJson = JSON.parse(jsonStringLimpa);\n            if (parsedJson && parsedJson.caminho) {\n                // Pega a decisão do Ollama, que será verificada abaixo\n                caminho = parsedJson.caminho;\n            }\n        } catch (e) {\n            console.error(\"Falha ao analisar JSON de roteamento:\", e, \"String recebida:\", jsonStringLimpa);\n        }\n    }\n\n\n    // *** 3. LÓGICA DE OVERRIDE COM PRIORIDADE (AQUI ESTÁ A CORREÇÃO FINAL) ***\n    const originalMessageLower = originalMessage.toLowerCase();\n\n    // A. PRIORITY 1: WHATSAPP (Urgency overrides everything, including Trello)\n    if (originalMessageLower.includes('agora') || \n        originalMessageLower.includes('urgente') ||\n        originalMessageLower.includes('ligue') ||\n        originalMessageLower.includes('retorna') ||\n        originalMessageLower.includes('imediatamente')) \n    {\n        caminho = 'whats'; // FORÇA A ROTA WHATSAPP (PRIORIDADE MÁXIMA)\n    } \n    \n    // B. PRIORITY 2: TRELLO (Executa APENAS se o caminho ainda não for 'whats' e for de organização)\n    else if (originalMessageLower.includes('card') || originalMessageLower.includes('organizar') ||\n             originalMessageLower.includes('pendências') || originalMessageLower.includes('checklist') ||\n             originalMessageLower.includes('trello')) \n    {\n        caminho = 'trello'; // Força a rota Trello\n    } \n\n\n    // 4. LÓGICA DE ALERTA/FALLBACK (Segurança Final)\n    const caminhosValidos = ['email', 'whats', 'trello'];\n    \n    // Se o caminho não é um dos 3 válidos (e não foi forçado acima), é um ALERTA_FALHA\n    if (!caminhosValidos.includes(caminho)) {\n        caminho = 'ALERTA_FALHA'; \n    }\n    \n    \n    // 5. CONSOLIDA AS VARIÁVEIS NA SAÍDA\n    item.json.caminho_ollama = caminho; \n    item.json['Whatsapp-Message'] = originalMessage; \n    item.json.Telefone_Usuario = phoneNumber;\n}\n\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -912,
+        208
+      ],
+      "id": "3e7c3575-126b-4bec-b367-a880d9c2fc5f",
+      "name": "Limpeza Ollama"
+    },
+    {
+      "parameters": {
+        "resource": "board",
+        "name": "=Alerta Roteamento IA {{ new Date().toLocaleString() }}",
+        "description": "=AVISO: Este quadro foi criado devido a uma mensagem classificada para a rota Trello (Organização).  --- MENSAGEM ORIGINAL: {{ $('Contexto Ollama').item.json.original_message }}  --- DETALHES DE RASTREABILIDADE: Telefone de Origem: {{ $('Contexto Ollama').item.json.phone_number }} Rota Escolhida: Trello (Criação de Quadro)",
+        "additionalFields": {
+          "prefs_background": "green"
+        }
+      },
+      "type": "n8n-nodes-base.trello",
+      "typeVersion": 1,
+      "position": [
+        -400,
+        480
+      ],
+      "id": "bbc3373b-630d-4239-a9a6-d8dfd2bee5ba",
+      "name": "Trello",
+      "credentials": {
+        "trelloApi": {
+          "id": "BHCe9lvbEWU1vUWH",
+          "name": "Trello account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env[\"EMAIL_ADMIN_ALERTA\"] }}",
+        "subject": "=Recado importante!",
+        "message": "={{ $json['Whatsapp-Message'] }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -400,
+        672
+      ],
+      "id": "bf5428e1-b62d-4d58-92e2-e55b576cc9aa",
+      "name": "Gmail OK",
+      "webhookId": "SUBSTITUA_WEBHOOK_INTERNO_APOS_IMPORTAR",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gj0CXe0tqUcdnb4D",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env[\"TTS_API_URL\"] }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"text\": \"{{ $json['Whatsapp-Message'] }}\",\n  \"voice\": \"pm_santa\",\n  \"speed\": 1.0,\n  \"lang\": \"pt-br\"\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -176,
+        192
+      ],
+      "id": "df5c9ef8-9b8a-4bc7-9b3a-c9f121461f57",
+      "name": "Text-To-Speech Local",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env[\"OLLAMA_API_URL\"] }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.ollamaJsonString }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1216,
+        224
+      ],
+      "id": "da527097-ece2-4838-af7c-d67265391e47",
+      "name": "Ollama Local",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env[\"EMAIL_ADMIN_ALERTA\"] }}",
+        "subject": "=ALERTA_FALHA, Ollama não entendeu!",
+        "message": "=Ollama se perdeu no raciocínio e separou a mengagem como erro. \n\nFavor verificar o Google Sheets (aba configurada no .env).",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -400,
+        -32
+      ],
+      "id": "4db2405b-f8e3-42d3-a539-1d41f0d7075f",
+      "name": "Gmail ALERTA_FALHA",
+      "webhookId": "SUBSTITUA_WEBHOOK_INTERNO_APOS_IMPORTAR",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gj0CXe0tqUcdnb4D",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "from": "+12202229082",
+        "to": "={{ $env[\"WHATSAPP_DEST_NUMBER\"] }}",
+        "message": "={{ $('Limpeza Ollama').item.json['Whatsapp-Message'] }},   {{ $json.mediaLink }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        672,
+        160
+      ],
+      "id": "f4650fb4-0173-42cd-921a-a08b6dd6b3bf",
+      "name": "Envia resposta para whatsapp do usuário",
+      "credentials": {
+        "twilioApi": {
+          "id": "IxgRmC8HIvdVFilw",
+          "name": "Twilio account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env[\"EMAIL_ADMIN_ALERTA\"] }}",
+        "subject": "=Erro! Servidor kokoro desconectado",
+        "message": "=Problemas com o servidor kokoro local",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        176,
+        336
+      ],
+      "id": "7d6c5140-cf64-4eb2-88b0-ac164cc645a8",
+      "name": "Gmail Kokoro |  Desconectado",
+      "webhookId": "SUBSTITUA_WEBHOOK_INTERNO_APOS_IMPORTAR",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gj0CXe0tqUcdnb4D",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -784,
+        416
+      ],
+      "id": "37eabd6f-3eb6-4efe-8771-67eb13ea8b7c",
+      "name": "stop ollama"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        160
+      ],
+      "id": "57146755-7118-470a-a867-725a867ce3c1",
+      "name": "stop whats"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        480
+      ],
+      "id": "2f4dcaa2-add8-4084-9a95-089dfc45d57a",
+      "name": "stop trello"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        672
+      ],
+      "id": "6cdd8281-646b-4a7d-b718-34a97001ea58",
+      "name": "stop gmail"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -48,
+        -32
+      ],
+      "id": "c8480236-a948-4c5b-b658-ae1b1aea491c",
+      "name": " stop alerta"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env[\"EMAIL_ADMIN_ALERTA\"] }}",
+        "subject": "=Erro! Servidor Ollama desconectado",
+        "message": "=Problemas com o servidor ollama local",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -1040,
+        416
+      ],
+      "id": "9eac2c15-ef0e-4e26-b2dd-5c84078610ae",
+      "name": "Gmail  Ollama  Desconectado",
+      "webhookId": "SUBSTITUA_WEBHOOK_INTERNO_APOS_IMPORTAR",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gj0CXe0tqUcdnb4D",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "919b13c4-6f7a-4a78-8b0f-6c200b6a0eaf",
+              "leftValue": "={{ $json.body.NumMedia }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1872,
+        224
+      ],
+      "id": "b5d5b5f4-47f5-4efa-8e7a-ba3972450d50",
+      "name": "Filtro de Mídia"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env[\"EMAIL_ADMIN_ALERTA\"] }}",
+        "subject": "=Alerta - Mídia Bloqueada",
+        "message": "=Não processamos mídias como áudio, vídeos, imagens. Envie somente áudio.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -1696,
+        400
+      ],
+      "id": "65943302-eeca-4124-9a28-aeb10ef3fe60",
+      "name": "Gmail  Mídia",
+      "webhookId": "SUBSTITUA_WEBHOOK_INTERNO_APOS_IMPORTAR",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gj0CXe0tqUcdnb4D",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "return [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        336
+      ],
+      "id": "600a1aa4-3e21-4922-9688-a64d4a4c8a25",
+      "name": "stop kokoro"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        928,
+        336
+      ],
+      "id": "b880d740-4872-47de-a2c1-c9f65c767552",
+      "name": "stop storage"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1456,
+        400
+      ],
+      "id": "727fe5b4-e70a-4e4c-8254-12dd726b8942",
+      "name": "stop mídia"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -880,
+        32
+      ],
+      "id": "061c7be8-a0b4-4115-92db-fd760929dd57",
+      "name": "stop texto grande"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env[\"EMAIL_ADMIN_ALERTA\"] }}",
+        "subject": "=Alerta - Texto Grande",
+        "message": "=Texto maior do que 500 caracteres, o fluxo só aceita textos com até 500 caracteres.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -1216,
+        32
+      ],
+      "id": "2b04f0e5-4a3c-4728-8bfa-8f3140100cea",
+      "name": "Gmail  Texto Grande |",
+      "webhookId": "SUBSTITUA_WEBHOOK_INTERNO_APOS_IMPORTAR",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gj0CXe0tqUcdnb4D",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c525b937-c316-4151-880e-4ccb05089acd",
+              "leftValue": "={{ $json.original_message.length }}",
+              "rightValue": 500,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1456,
+        208
+      ],
+      "id": "60879952-a08b-4387-9ea6-7e0d6a19db21",
+      "name": "Filtro de Tamanho"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env[\"EMAIL_ADMIN_ALERTA\"] }}",
+        "subject": "=Erro de Conexão Google Storage",
+        "message": "=Problemas de conexão com o servidor do google storage, verifique se não é o primeiro upload do dia, geralmente fica em load eterno, reinicie o workflow e tente novamente. ",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        672,
+        336
+      ],
+      "id": "3a7502ab-78ae-4feb-8846-e71fbb704825",
+      "name": "Gmail Storage Erro | Conexão ",
+      "webhookId": "SUBSTITUA_WEBHOOK_INTERNO_APOS_IMPORTAR",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gj0CXe0tqUcdnb4D",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env[\"GOOGLE_SHEETS_API_URL\"] }}/{{ $env[\"GOOGLE_SHEETS_LOG_ID\"] }}/values/{{ $env[\"GOOGLE_SHEETS_SHEET_NAME\"] }}!A1:append?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"values\": [\n    [\n      \" Alerta ! Mídia Bloqueada —> email \",\n      \" Usuário mandou áudio não suportado.\",\n      \" {{ $('Webhook Recebe Mensagem Usuário').item.json.body.From.replace('whatsapp:', '') }}\"\n    ]\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1568,
+        400
+      ],
+      "id": "7503a075-7f01-4318-931e-e6a132c28381",
+      "name": " Log Mídia—>|",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0YjdkfFOxhwkzjgB",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env[\"GOOGLE_SHEETS_API_URL\"] }}/{{ $env[\"GOOGLE_SHEETS_LOG_ID\"] }}/values/{{ $env[\"GOOGLE_SHEETS_SHEET_NAME\"] }}!A1:append?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"values\": [\n    [\n      \" Alerta ! Texto Bloqueado —> email \",\n      \" Usuário mandou texto muito grande não suportado.\",\n      \" {{ $('Webhook Recebe Mensagem Usuário').item.json.body.From.replace('whatsapp:', '') }}\"\n    ]\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1040,
+        32
+      ],
+      "id": "efea98d2-bb9f-4f42-8822-c927d7750412",
+      "name": " Log Texto Grande —>|",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0YjdkfFOxhwkzjgB",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env[\"GOOGLE_SHEETS_API_URL\"] }}/{{ $env[\"GOOGLE_SHEETS_LOG_ID\"] }}/values/{{ $env[\"GOOGLE_SHEETS_SHEET_NAME\"] }}!A1:append?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"values\": [\n    [\n      \" Alerta ! Ollama Deconectado —> email \",\n      \" Servidor do Ollama Local parou de funcionar.\",\n      \" {{ $('Webhook Recebe Mensagem Usuário').item.json.body.From.replace('whatsapp:', '') }}\"\n    ]\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -912,
+        416
+      ],
+      "id": "fb5f3e00-e8e6-468e-9338-7b76dddef930",
+      "name": " Log Ollama—>|",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0YjdkfFOxhwkzjgB",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env[\"GOOGLE_SHEETS_API_URL\"] }}/{{ $env[\"GOOGLE_SHEETS_LOG_ID\"] }}/values/{{ $env[\"GOOGLE_SHEETS_SHEET_NAME\"] }}!A1:append?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"values\": [\n    [\n      \" {{ $('Limpeza Ollama').item.json.caminho_ollama }}! Ollama não entendeu —> email \",\n      \" {{ $('Limpeza Ollama').item.json['Whatsapp-Message'] }}\",\n      \" {{ $('Limpeza Ollama').item.json.Telefone_Usuario }}\"\n    ]\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -176,
+        -32
+      ],
+      "id": "555cb4ff-fb76-4658-a516-c71e9ed0f13e",
+      "name": " Log ALERTA_FALHA—>|",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0YjdkfFOxhwkzjgB",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env[\"GOOGLE_SHEETS_API_URL\"] }}/{{ $env[\"GOOGLE_SHEETS_LOG_ID\"] }}/values/{{ $env[\"GOOGLE_SHEETS_SHEET_NAME\"] }}!A1:append?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"values\": [\n    [\n      \" {{ $('Limpeza Ollama').item.json.caminho_ollama }} \",\n      \" {{ $('Limpeza Ollama').item.json['Whatsapp-Message'] }}\",\n      \" {{ $('Limpeza Ollama').item.json.Telefone_Usuario }}\"\n    ]\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        928,
+        160
+      ],
+      "id": "2546421c-1e72-4a8d-a7b4-933fbe25c583",
+      "name": "Log completo |",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0YjdkfFOxhwkzjgB",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env[\"GOOGLE_SHEETS_API_URL\"] }}/{{ $env[\"GOOGLE_SHEETS_LOG_ID\"] }}/values/{{ $env[\"GOOGLE_SHEETS_SHEET_NAME\"] }}!A1:append?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"values\": [\n    [\n      \" Alerta ! Kokoro Desconectado —> email \",\n      \" {{ $('Limpeza Ollama').item.json['Whatsapp-Message'] }}\",\n      \" {{ $('Limpeza Ollama').item.json.Telefone_Usuario }}\"\n    ]\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        304,
+        336
+      ],
+      "id": "86d3af1c-e3de-4af1-a9c6-4cd9b0dd63c5",
+      "name": "Log kokoro",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0YjdkfFOxhwkzjgB",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env[\"GOOGLE_SHEETS_API_URL\"] }}/{{ $env[\"GOOGLE_SHEETS_LOG_ID\"] }}/values/{{ $env[\"GOOGLE_SHEETS_SHEET_NAME\"] }}!A1:append?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"values\": [\n    [\n      \" Alerta ! Google Storage Desconectado \",\n      \" {{ $('Limpeza Ollama').item.json['Whatsapp-Message'] }}\",\n      \" {{ $('Limpeza Ollama').item.json.Telefone_Usuario }}\"\n    ]\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        800,
+        336
+      ],
+      "id": "a5c49441-31ff-4bfc-bbf0-e446073c00d8",
+      "name": "Log Storage |",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0YjdkfFOxhwkzjgB",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env[\"GOOGLE_SHEETS_API_URL\"] }}/{{ $env[\"GOOGLE_SHEETS_LOG_ID\"] }}/values/{{ $env[\"GOOGLE_SHEETS_SHEET_NAME\"] }}!A1:append?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"values\": [\n    [\n      \" {{ $('Limpeza Ollama').item.json.caminho_ollama }} \",\n      \" {{ $('Limpeza Ollama').item.json['Whatsapp-Message'] }}\",\n      \" {{ $('Limpeza Ollama').item.json.Telefone_Usuario }}\"\n    ]\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -176,
+        480
+      ],
+      "id": "0b1498e9-8af9-4dd3-a3c1-e33ee7c6c1ca",
+      "name": "Log Trello |",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0YjdkfFOxhwkzjgB",
+          "name": "Google Sheets account 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env[\"GOOGLE_SHEETS_API_URL\"] }}/{{ $env[\"GOOGLE_SHEETS_LOG_ID\"] }}/values/{{ $env[\"GOOGLE_SHEETS_SHEET_NAME\"] }}!A1:append?valueInputOption=USER_ENTERED",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"values\": [\n    [\n      \" {{ $('Limpeza Ollama').item.json.caminho_ollama }} \",\n      \" {{ $('Limpeza Ollama').item.json['Whatsapp-Message'] }}\",\n      \" {{ $('Limpeza Ollama').item.json.Telefone_Usuario }}\"\n    ]\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -176,
+        672
+      ],
+      "id": "d71c683a-0b53-40dd-8d86-cf51443dda71",
+      "name": "Log Gmail  |",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "0YjdkfFOxhwkzjgB",
+          "name": "Google Sheets account 3"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Upload Google Storage": {
+      "main": [
+        [
+          {
+            "node": "Envia resposta para whatsapp do usuário",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail Storage Erro | Conexão ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contexto Ollama": {
+      "main": [
+        [
+          {
+            "node": "Filtro de Tamanho",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formata Áudio": {
+      "main": [
+        [
+          {
+            "node": "Upload Google Storage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Recebe Mensagem Usuário": {
+      "main": [
+        [
+          {
+            "node": "Filtro de Mídia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Gmail ALERTA_FALHA",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Formata Texto para Áudio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Trello",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formata Texto para Áudio": {
+      "main": [
+        [
+          {
+            "node": "Text-To-Speech Local",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limpeza Ollama": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trello": {
+      "main": [
+        [
+          {
+            "node": "Log Trello |",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail OK": {
+      "main": [
+        [
+          {
+            "node": "Log Gmail  |",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text-To-Speech Local": {
+      "main": [
+        [
+          {
+            "node": "Formata Áudio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail Kokoro |  Desconectado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Local": {
+      "main": [
+        [
+          {
+            "node": "Limpeza Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail  Ollama  Desconectado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail ALERTA_FALHA": {
+      "main": [
+        [
+          {
+            "node": " Log ALERTA_FALHA—>|",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Envia resposta para whatsapp do usuário": {
+      "main": [
+        [
+          {
+            "node": "Log completo |",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Kokoro |  Desconectado": {
+      "main": [
+        [
+          {
+            "node": "Log kokoro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail  Ollama  Desconectado": {
+      "main": [
+        [
+          {
+            "node": " Log Ollama—>|",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtro de Mídia": {
+      "main": [
+        [
+          {
+            "node": "Contexto Ollama",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Gmail  Mídia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail  Mídia": {
+      "main": [
+        [
+          {
+            "node": " Log Mídia—>|",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail  Texto Grande |": {
+      "main": [
+        [
+          {
+            "node": " Log Texto Grande —>|",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtro de Tamanho": {
+      "main": [
+        [
+          {
+            "node": "Gmail  Texto Grande |",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ollama Local",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail Storage Erro | Conexão ": {
+      "main": [
+        [
+          {
+            "node": "Log Storage |",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    " Log Mídia—>|": {
+      "main": [
+        [
+          {
+            "node": "stop mídia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    " Log Texto Grande —>|": {
+      "main": [
+        [
+          {
+            "node": "stop texto grande",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    " Log Ollama—>|": {
+      "main": [
+        [
+          {
+            "node": "stop ollama",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    " Log ALERTA_FALHA—>|": {
+      "main": [
+        [
+          {
+            "node": " stop alerta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log completo |": {
+      "main": [
+        [
+          {
+            "node": "stop whats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log kokoro": {
+      "main": [
+        [
+          {
+            "node": "stop kokoro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Storage |": {
+      "main": [
+        [
+          {
+            "node": "stop storage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Trello |": {
+      "main": [
+        [
+          {
+            "node": "stop trello",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Gmail  |": {
+      "main": [
+        [
+          {
+            "node": "stop gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "faf90d71-2ee2-427d-97cc-19439117fbda",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4bb9e530f8f00261d1cad46ef86c5c3ea728b0369d95247c17f3fb32ce08386b"
+  },
+  "id": "Sqs5CzHD943AKLoP",
+  "tags": []
+}
