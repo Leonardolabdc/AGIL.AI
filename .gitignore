@@ -1,0 +1,32 @@
+# ====================================================================
+# Segurança — não versionar segredos nem dados de runtime
+# ====================================================================
+
+# Variáveis de ambiente (valores reais ficam só no .env local)
+.env
+.env.local
+.env.*.local
+
+# n8n — pasta inteira = cofre (banco, OAuth, chave de criptografia, logs)
+data/
+
+# Workflow de PRODUÇÃO (contém webhooks reais) — use o .example.json no Git
+n8n-ia-workflow.json
+
+# Ollama — chave privada e cache de modelos locais
+ollama_data/id_ed25519
+ollama_data/
+
+# Modelos e imagens Docker exportadas (baixe/build localmente)
+*.tar
+kokoro-v1.0.onnx
+voices-v1.0.bin
+
+# Python / sistema
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+
+# Scripts temporários de auditoria
+_audit_db.py
