@@ -1,0 +1,36 @@
+# Arquivo: Dockerfile_kokoro
+# Define o ambiente Docker para a API local do Kokoro TTS (Python/FastAPI).
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 1. Instalar dependências de sistema CRÍTICAS (ffmpeg e espeak-ng)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        espeak-ng \
+        ffmpeg \
+        libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Instalar dependências Python
+RUN pip install --no-cache-dir \
+    "fastapi[all]" \
+    uvicorn \
+    pydantic \
+    pydub \
+    python-multipart \
+    soundfile \
+    kokoro-onnx 
+
+# 3. Copiar arquivos da API e os modelos binários
+# CRÍTICO: Estes arquivos DEVE estar na sua pasta local para serem copiados.
+COPY kokoro_api.py .
+COPY kokoro-v1.0.onnx .
+COPY voices-v1.0.bin .
+
+# Expor a porta 8000
+EXPOSE 8000
+
+# Comando para rodar a aplicação
+CMD ["uvicorn", "kokoro_api:app", "--host", "0.0.0.0", "--port", "8000"]
