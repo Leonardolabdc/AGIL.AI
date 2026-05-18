@@ -164,8 +164,6 @@ O AGIL.AI foi construído com política rigorosa de privacidade e governança:
 | **Base legal** | Interesse legítimo e execução de contrato |
 | **Finalidade** | Triagem e encaminhamento ao canal correto |
 
-> Consulte [PUBLICAR-NO-GITHUB.md](PUBLICAR-NO-GITHUB.md) para publicar o repositório sem expor segredos.
-
 ---
 
 ## Instalação rápida
@@ -264,7 +262,6 @@ AGIL.AI/
 ├── whisper_api.py             # API STT
 ├── n8n-ia-workflow.example.json
 ├── .env.example
-├── PUBLICAR-NO-GITHUB.md
 └── scripts/
     └── verificar-antes-do-push.ps1
 ```
@@ -276,7 +273,6 @@ AGIL.AI/
 | Arquivo | Descrição |
 |:--------|:----------|
 | [.env.example](.env.example) | Template de variáveis de ambiente |
-| [PUBLICAR-NO-GITHUB.md](PUBLICAR-NO-GITHUB.md) | Guia de publicação segura |
 | [n8n-ia-workflow.example.json](n8n-ia-workflow.example.json) | Workflow sanitizado para importação |
 
 ---

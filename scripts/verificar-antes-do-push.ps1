@@ -75,7 +75,7 @@ foreach ($f in $gitFiles) {
     if ($f -eq "n8n-ia-workflow.json") {
         $erros += "Use n8n-ia-workflow.example.json no Git, nao o JSON de producao"
     }
-    if ($f -eq ".env.example" -or $f -eq "PUBLICAR-NO-GITHUB.md") { continue }
+    if ($f -eq ".env.example") { continue }
     $path = Join-Path $root $f
     if (-not (Test-Path $path) -or (Test-Path $path -PathType Container)) { continue }
     $content = Get-Content $path -Raw -ErrorAction SilentlyContinue
@@ -111,5 +111,5 @@ if ($erros.Count -eq 0) {
 Write-Host "BLOQUEADO: Corrija antes do git push:" -ForegroundColor Red
 foreach ($e in $erros) { Write-Host "  - $e" -ForegroundColor Red }
 Write-Host ""
-Write-Host "Veja PUBLICAR-NO-GITHUB.md para o passo a passo." -ForegroundColor Yellow
+Write-Host "Revise o README.md e o .gitignore antes de publicar." -ForegroundColor Yellow
 exit 1
