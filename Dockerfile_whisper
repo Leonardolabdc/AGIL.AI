@@ -1,0 +1,33 @@
+# Arquivo: Dockerfile_whisper
+# Simplificado para evitar a instalação massiva de dependências de GPU/CUDA.
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# 1. Instalar dependências de sistema (ffmpeg é crucial para áudio)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Instalar dependências Python
+# Instala PyTorch CPU-Only (Crucial para o seu hardware)
+# Instala a versão mais recente do Whisper (que será mais estável que as versões antigas)
+RUN pip install --no-cache-dir \
+    torch==2.3.0+cpu \
+    --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir \
+    flask \
+    openai-whisper \
+    gunicorn \
+    python-multipart 
+
+# 3. Copiar arquivos de código
+COPY whisper_api.py .
+
+# Expor a porta 9000
+EXPOSE 9000
+
+# Comando para rodar a aplicação usando Gunicorn
+CMD ["gunicorn", "--bind", "0.0.0.0:9000", "whisper_api:app"]
