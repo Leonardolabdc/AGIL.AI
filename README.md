@@ -1,5 +1,15 @@
 <div align="center">
 
+<a href="https://www.youtube.com/watch?v=K8CMWyNNGLc" target="_blank" rel="noopener noreferrer">
+  <img src="assets/AGIL.AI.gif" alt="AGIL.AI — Demonstração do projeto (clique para assistir no YouTube)" width="900"/>
+</a>
+
+<br/>
+
+<sub>Clique no GIF para assistir à demonstração completa no <a href="https://www.youtube.com/watch?v=K8CMWyNNGLc">YouTube</a></sub>
+
+<br/><br/>
+
 # AGIL.AI
 
 ### Automação de triagem que transforma problemas urgentes em ações concluídas
